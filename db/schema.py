@@ -11,4 +11,5 @@ CREATE TABLE IF NOT EXISTS requests (
     cost_usd REAL,
     ab_variant TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_requests_ts ON requests(ts);
 """
