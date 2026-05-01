@@ -79,6 +79,16 @@ class FakeMetrics:
         self.rows.append(kwargs)
 
 
+class FakePromMetrics:
+    def __init__(self) -> None:
+        self.observations: list[dict[str, Any]] = []
+
+    def observe_completion(self, *, tier: str, cost_usd: float, latency_ms: float) -> None:
+        self.observations.append(
+            {"tier": tier, "cost_usd": cost_usd, "latency_ms": latency_ms}
+        )
+
+
 @pytest.fixture
 def test_app() -> FastAPI:
     app = FastAPI()
@@ -88,6 +98,7 @@ def test_app() -> FastAPI:
     app.state.model_router = FakeModelRouter()
     app.state.llm_client = FakeLLMClient()
     app.state.metrics = FakeMetrics()
+    app.state.prom_metrics = FakePromMetrics()
     return app
 
 
@@ -115,6 +126,7 @@ async def test_completions_pipeline_success(test_app: FastAPI) -> None:
     assert row["tier"] == "small"
     assert row["prompt_tokens"] == 40
     assert row["completion_tokens"] == 12
+    assert len(test_app.state.prom_metrics.observations) == 1
 
 
 @pytest.mark.asyncio

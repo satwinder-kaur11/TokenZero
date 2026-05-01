@@ -43,6 +43,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
     model_router = raw_request.app.state.model_router
     llm_client = raw_request.app.state.llm_client
     metrics = raw_request.app.state.metrics
+    prom_metrics = getattr(raw_request.app.state, "prom_metrics", None)
 
     for msg in request.messages:
         context_manager.add_message(msg.role, msg.content)
@@ -90,6 +91,12 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
         cost_usd=cost_usd,
         ab_variant=variant,
     )
+    if prom_metrics is not None:
+        prom_metrics.observe_completion(
+            tier=decision.tier,
+            cost_usd=cost_usd,
+            latency_ms=latency_ms,
+        )
 
     response_payload = ChatCompletionResponse(
         id=str(llm_response.get("id", f"cmpl-{uuid.uuid4().hex[:12]}")),

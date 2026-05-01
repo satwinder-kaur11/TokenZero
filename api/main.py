@@ -7,9 +7,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes.completions import router as completions_router
+from api.routes.metrics import router as metrics_router
 from core.classifier_factory import get_classifier
 from core.context_manager import ContextManager
 from core.llm_client import LLMClient
+from core.prometheus_metrics import RouterPrometheusMetrics
 from core.router import ModelRouter
 from core.settings import get_settings
 from db.queries import MetricsRecorder
@@ -36,6 +38,7 @@ def create_app() -> FastAPI:
             http_client=shared_http_client,
         )
         app.state.metrics = metrics
+        app.state.prom_metrics = RouterPrometheusMetrics()
         app.state.shared_http_client = shared_http_client
 
         try:
@@ -58,6 +61,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(completions_router, prefix="/v1")
+    app.include_router(metrics_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
