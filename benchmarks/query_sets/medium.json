@@ -1,1 +1,22 @@
-[]
+[
+  "Compare REST and GraphQL for internal microservice communication with pros and cons.",
+  "Explain how caching can reduce API latency and where it can backfire.",
+  "Draft a rollout plan for introducing A/B testing in an existing API.",
+  "Given a Python dictionary of token counts, show code to compute total tokens.",
+  "Explain the difference between p95 and average latency with an example.",
+  "Design a basic database schema for tracking model request costs.",
+  "Provide a checklist for deploying a FastAPI app with Docker in production.",
+  "Review this idea and suggest improvements: route all prompts over 0.7 complexity to large model.",
+  "Write pseudocode for sliding-window context management.",
+  "How would you monitor model routing drift over time?",
+  "Explain why deterministic seeding matters in benchmark pipelines.",
+  "Suggest a strategy for handling upstream 429 retries safely.",
+  "Describe tradeoffs between SQLite and Postgres for telemetry storage.",
+  "Give a sample OpenAI-compatible chat completion request and response.",
+  "How should we choose thresholds for small/medium/large model routing?",
+  "Create test cases for a heuristic complexity classifier.",
+  "Explain how to estimate inference cost from prompt and completion tokens.",
+  "Propose a fault-tolerant approach when summarizer model is unavailable.",
+  "Write a short architecture note: why keep core logic separate from API layer?",
+  "What metrics should a dashboard show to sell cost savings to stakeholders?"
+]

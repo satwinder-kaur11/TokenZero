@@ -1,1 +1,22 @@
-[]
+[
+  "Debug this issue: our router sends too many requests to the large tier even for short prompts. Propose root causes, instrumentation, and fixes.",
+  "Design an end-to-end experiment to prove smart routing improves margin without hurting user satisfaction. Include statistical methodology.",
+  "Given noisy production telemetry, derive a robust method to calibrate complexity thresholds over time with guardrails.",
+  "Write Python code architecture for a pluggable classifier interface that supports heuristic, BERT, and remote classifier backends.",
+  "Analyze failure modes in background summarization for long conversations and propose a fallback hierarchy.",
+  "Compare three strategies for context compression and argue which one is best under strict latency constraints.",
+  "Create a migration plan from SQLite to Postgres with zero downtime and data validation steps.",
+  "Diagnose intermittent p95 latency spikes only seen in router mode and produce a hypothesis-driven debugging plan.",
+  "Draft a security review for a proxy service handling third-party API keys and user prompts.",
+  "Propose an architecture for multi-region deployment of the smart router with failover and consistent metrics.",
+  "Write a full test strategy covering unit, integration, contract, and benchmark validation for this product.",
+  "Explain how to build cost attribution by tenant and team while preserving privacy and auditability.",
+  "Given benchmark data with confounders, show how you would separate routing gains from provider-side variability.",
+  "Design an adaptive router that uses online learning while preventing catastrophic quality regressions.",
+  "Model the economics of routing under changing provider pricing and variable traffic mix.",
+  "Describe how to detect and mitigate prompt-injection attempts passing through a transparent proxy.",
+  "Provide a production incident runbook for Together API outages impacting the router.",
+  "Propose a canary release strategy for new routing logic with automatic rollback conditions.",
+  "Architect a hybrid memory system that combines summaries, retrieval, and recency windows for long dialogs.",
+  "Create a board-level narrative using benchmark outputs to justify investment in LLM routing infrastructure."
+]
