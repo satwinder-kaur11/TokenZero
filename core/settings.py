@@ -8,8 +8,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    llm_backend: Literal["together", "gemini", "mock"] = Field(
+        default="together", alias="LLM_BACKEND"
+    )
+
     together_api_key: str = Field(default="replace_me", alias="TOGETHER_API_KEY")
     together_base_url: str = Field(default="https://api.together.xyz", alias="TOGETHER_BASE_URL")
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    gemini_base_url: str = Field(
+        default="https://generativelanguage.googleapis.com", alias="GEMINI_BASE_URL"
+    )
+    gemini_model: str = Field(default="gemini-1.5-flash", alias="GEMINI_MODEL")
 
     router_mode: Literal["heuristic", "bert"] = Field(default="heuristic", alias="ROUTER_MODE")
     ab_split_ratio: float = Field(default=0.10, ge=0.0, le=1.0, alias="AB_SPLIT_RATIO")

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import altair as alt
+import httpx
 import pandas as pd
 import streamlit as st
 
@@ -30,10 +31,105 @@ with st.sidebar:
     st.subheader("Filters")
     sqlite_path = st.text_input("SQLite path", value=default_db)
     hours = st.slider("Lookback (hours)", min_value=1, max_value=168, value=24)
+    st.subheader("Chat")
+    router_api_url = st.text_input(
+        "Router API URL",
+        value="http://127.0.0.1:8000/v1/chat/completions",
+    )
+    budget_hint = st.selectbox("Budget hint", options=["balanced", "cheap", "quality"], index=0)
+
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []
+
+
+def call_router_chat(
+    api_url: str,
+    messages: list[dict[str, str]],
+    budget: str,
+) -> tuple[str, dict[str, str], str | None]:
+    payload = {
+        "messages": messages,
+        "budget_hint": budget,
+        "stream": False,
+    }
+    try:
+        response = httpx.post(
+            api_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=45.0,
+        )
+    except httpx.HTTPError as exc:
+        return "", {}, f"Network error: {exc}"
+
+    if response.status_code != 200:
+        return "", {}, f"Router returned {response.status_code}: {response.text[:500]}"
+
+    try:
+        body = response.json()
+    except ValueError:
+        return "", {}, "Router returned non-JSON response."
+
+    answer = ""
+    choices = body.get("choices", []) if isinstance(body, dict) else []
+    if choices and isinstance(choices[0], dict):
+        message = choices[0].get("message", {})
+        if isinstance(message, dict):
+            answer = str(message.get("content", "")).strip()
+
+    headers = {
+        "x-router-model": response.headers.get("x-router-model", ""),
+        "x-tier": response.headers.get("x-tier", ""),
+        "x-complexity-score": response.headers.get("x-complexity-score", ""),
+        "x-ab-variant": response.headers.get("x-ab-variant", ""),
+    }
+    return answer, headers, None
+
+
+st.subheader("Router Chat")
+st.caption("Send a prompt and inspect routing decisions in real time.")
+
+for msg in st.session_state.chat_messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+        meta = msg.get("meta")
+        if isinstance(meta, dict) and meta:
+            st.caption(
+                f'Tier: `{meta.get("tier","")}` | Model: `{meta.get("model","")}` | '
+                f'Complexity: `{meta.get("score","")}` | Variant: `{meta.get("variant","")}`'
+            )
+
+user_prompt = st.chat_input("Message the Smart Router...")
+if user_prompt:
+    st.session_state.chat_messages.append({"role": "user", "content": user_prompt})
+    model_messages = [
+        {"role": m["role"], "content": m["content"]}
+        for m in st.session_state.chat_messages
+        if m["role"] in {"user", "assistant"}
+    ]
+    answer, headers, error = call_router_chat(router_api_url, model_messages, budget_hint)
+    if error:
+        st.session_state.chat_messages.append(
+            {"role": "assistant", "content": f"Request failed: {error}"}
+        )
+    else:
+        st.session_state.chat_messages.append(
+            {
+                "role": "assistant",
+                "content": answer or "(empty response)",
+                "meta": {
+                    "tier": headers.get("x-tier", ""),
+                    "model": headers.get("x-router-model", ""),
+                    "score": headers.get("x-complexity-score", ""),
+                    "variant": headers.get("x-ab-variant", ""),
+                },
+            }
+        )
+    st.rerun()
 
 db_exists = Path(sqlite_path).exists()
 if not db_exists:
-    st.warning(f"Database not found at `{sqlite_path}`. Start the API and send traffic first.")
+    st.warning(f"Database not found at `{sqlite_path}`. Start API traffic to populate metrics.")
     st.stop()
 
 
