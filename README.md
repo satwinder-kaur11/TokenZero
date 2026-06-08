@@ -16,17 +16,7 @@ To run this project correctly on any device without errors, you will need the fo
 
 ### 2. Install Python Dependencies
 
-It's highly recommended to use a virtual environment to avoid conflicts.
 
-```powershell
-# Create a virtual environment
-python -m venv venv
-
-# Activate the virtual environment
-# Windows:
-.\venv\Scripts\activate
-# Mac/Linux:
-# source venv/bin/activate
 
 # Upgrade pip and install the project dependencies
 python -m pip install -U pip
@@ -48,12 +38,11 @@ Open a new terminal and pull the required models for your routing tiers. Make su
 ```powershell
 # Pull the summarizer and small tier model
 ollama pull mistral
+SUMMARIZER_MODE: ollama pull llama3.2:latest
 
-# Pull the medium tier model
-ollama pull llama3
-
-# Pull the large tier model (Note: requires sufficient RAM/VRAM)
-ollama pull llama3:70b
+SMALL_MODEL: ollama pull llama3.2:1b      # Super fast, 1.3 GB edge model
+MEDIUM_MODEL: ollama pull llama3.2:latest    # Balanced, 2.0 GB 3B model
+LARGE_MODEL: ollama pull llama3.1:8b
 ```
 *(You can use any models you prefer, just make sure to update your `.env` configuration to match).*
 
@@ -97,11 +86,11 @@ curl http://localhost:8000/health
 
 ### 6. Run the Telemetry Dashboard
 
-Open another terminal session, activate your virtual environment, and run the Streamlit dashboard:
+Open another terminal session and run the Streamlit dashboard:
 
 ```powershell
 # Windows
-.\venv\Scripts\activate
+
 streamlit run dashboard/app.py
 ```
 This will open the dashboard UI at `http://localhost:8501`.
