@@ -19,7 +19,7 @@ class LLMClient:
         settings: Settings | None = None,
         http_client: httpx.AsyncClient | None = None,
         max_retries: int = 3,
-        timeout: float = 30.0,
+        timeout: float = 60.0,
         backoff_base_seconds: float = 0.5,
         sleep_func: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
@@ -36,6 +36,8 @@ class LLMClient:
             return self._call_mock(model=model, messages=messages)
         if backend == "gemini":
             return await self._call_gemini(model=model, messages=messages, **kwargs)
+        if backend == "ollama":
+            return await self._call_ollama(model=model, messages=messages, **kwargs)
         return await self._call_together(model=model, messages=messages, **kwargs)
 
     async def _call_together(self, model: str, messages: list[dict], **kwargs: object) -> dict[str, Any]:
@@ -47,6 +49,18 @@ class LLMClient:
         payload: dict[str, Any] = {"model": model, "messages": messages}
         payload.update(kwargs)
 
+        response = await self._request_with_retries(url=url, headers=headers, payload=payload)
+        return response.json()
+
+    async def _call_ollama(self, model: str, messages: list[dict], **kwargs: object) -> dict[str, Any]:
+        url = "http://localhost:11434/v1/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+        }
+        # Ollama doesn't support extra kwargs like temperature via **kwargs cleanly, skip them
         response = await self._request_with_retries(url=url, headers=headers, payload=payload)
         return response.json()
 

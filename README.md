@@ -2,203 +2,137 @@
 
 Smart Router is an OpenAI-compatible middleware that cuts inference cost and latency by routing each request to the right model tier. Simple prompts go to cheaper/faster models, complex prompts go to stronger models.
 
-## What It Does
+## Prerequisites
 
-- Accepts standard `/v1/chat/completions` requests.
-- Scores prompt complexity (`0.0` to `1.0`) with pluggable classifiers.
-- Routes traffic by threshold + budget mode (`cheap`, `balanced`, `quality`).
-- Controls context growth with sliding window + optional summarization.
-- Logs cost/latency/token telemetry to SQLite.
-- Exposes dashboard + Prometheus/Grafana for ROI proof.
+To run this project correctly on any device without errors, you will need the following installed:
 
-## Architecture
+1. **Python 3.9+**: [Download and install Python](https://www.python.org/downloads/).
+2. **Git**: [Download and install Git](https://git-scm.com/downloads).
+3. **Ollama**: [Download and install Ollama](https://ollama.com/download) for running local LLM models.
+4. **Docker & Docker Compose (Optional)**: Needed if you want to run the full observability stack (Prometheus + Grafana).
 
-```text
-Client App
-   |
-   v
-FastAPI Proxy (/v1/chat/completions)
-   |
-   +--> Context Manager (window + summarize)
-   |
-   +--> Classifier (heuristic | bert)
-   |
-   +--> Model Router (tier + A/B variant)
-   |
-   +--> LLM Client (Together API, retries)
-   |
-   +--> Metrics Recorder (SQLite) + Prometheus /metrics
-   |
-   v
-OpenAI-Compatible Response (+ x-router-model, x-tier, x-complexity-score)
-```
+## 1. Setup Instructions
 
-## Repo Layout
 
-```text
-api/                  FastAPI routes + app lifecycle
-core/                 business logic (no HTTP coupling)
-db/                   SQLite schema + query/aggregation logic
-dashboard/            Streamlit telemetry dashboard
-benchmarks/           benchmark runner + query sets + results artifacts
-tests/                unit + integration tests
-grafana/              provisioning + dashboards
-prometheus.yml        scrape config
-docker-compose.yml    full stack (router/dashboard/prometheus/grafana)
-```
+### 2. Install Python Dependencies
 
-## Quick Start
-
-1. Install dependencies.
+It's highly recommended to use a virtual environment to avoid conflicts.
 
 ```powershell
+# Create a virtual environment
+python -m venv venv
+
+# Activate the virtual environment
+# Windows:
+.\venv\Scripts\activate
+# Mac/Linux:
+# source venv/bin/activate
+
+# Upgrade pip and install the project dependencies
 python -m pip install -U pip
 python -m pip install -e .
+pip install prometheus_client
+python -m pip install aiosqlite  # Required for async DB operations
 ```
 
-2. Configure environment.
+### 3. Install and Setup Ollama Models
+
+Start the Ollama server in a background terminal if it is not already running:
+
+```powershell
+ollama serve
+```
+
+Open a new terminal and pull the required models for your routing tiers. Make sure you pull the models that correspond to your small, medium, and large tiers:
+
+```powershell
+# Pull the summarizer and small tier model
+ollama pull mistral
+
+# Pull the medium tier model
+ollama pull llama3
+
+# Pull the large tier model (Note: requires sufficient RAM/VRAM)
+ollama pull llama3:70b
+```
+*(You can use any models you prefer, just make sure to update your `.env` configuration to match).*
+
+### 4. Configure Environment Variables
+
+Copy the example environment file:
 
 ```powershell
 copy .env.example .env
 ```
 
-3. Start API locally.
+Open the `.env` file and adjust it to point to your local Ollama instance (since Ollama provides an OpenAI-compatible API):
+
+```ini
+# Point to your local Ollama server's OpenAI compatibility endpoint
+TOGETHER_BASE_URL="http://localhost:11434/v1"
+TOGETHER_API_KEY="ollama" # Ollama does not require a real API key
+
+# Update model names to exactly match the tags you pulled in Ollama
+SUMMARIZER_MODEL="mistral"
+SMALL_MODEL="mistral"
+MEDIUM_MODEL="llama3"
+LARGE_MODEL="llama3:70b"
+
+SQLITE_PATH="./data/router.db"
+```
+
+### 5. Start the Smart Router API
+
+Ensure your virtual environment is activated, then run:
 
 ```powershell
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-4. Validate health.
+Validate the health of the API:
 
 ```powershell
 curl http://localhost:8000/health
 ```
 
-## Docker Stack
+### 6. Run the Telemetry Dashboard
+
+Open another terminal session, activate your virtual environment, and run the Streamlit dashboard:
+
+```powershell
+# Windows
+.\venv\Scripts\activate
+streamlit run dashboard/app.py
+```
+This will open the dashboard UI at `http://localhost:8501`.
+
+### 7. Run Full Stack with Docker (Optional)
+
+To start the API, Dashboard, Prometheus, and Grafana all at once using Docker:
 
 ```powershell
 docker compose up --build
 ```
 
-Exposed services:
-
+**Exposed services in Docker:**
 - Router API: `http://localhost:8000`
 - Streamlit dashboard: `http://localhost:8501`
 - Prometheus: `http://localhost:9090`
-- Grafana: `http://localhost:3000` (default `admin/admin`)
+- Grafana: `http://localhost:3000` (default login: `admin` / `admin`)
 
-## How Routing Works
+*(Important: If running in Docker but your Ollama is running on the host machine, you may need to change your `.env` to `TOGETHER_BASE_URL=http://host.docker.internal:11434/v1` so the container can reach your host's Ollama).*
 
-1. Context manager adds new messages and trims/summarizes old history when token budget is exceeded.
-2. Classifier scores the latest user query complexity.
-3. Router selects model tier from score thresholds or explicit budget hint.
-4. LLM client calls Together API with retries for transient failures.
-5. Telemetry is recorded (latency, cost, tokens, tier, A/B variant).
-6. Response returns OpenAI-compatible JSON + router headers.
+## API Usage Example
 
-## API Reference
-
-### POST `/v1/chat/completions`
-
-Request:
-
-```json
-{
-  "messages": [
-    { "role": "user", "content": "Explain vector databases in simple terms." }
-  ],
-  "budget_hint": "balanced",
-  "stream": false
-}
-```
-
-Response headers:
-
-- `x-router-model`
-- `x-tier`
-- `x-complexity-score`
-- `x-ab-variant`
-
-Budget hints:
-
-- `cheap`: force small tier
-- `balanced`: threshold-based routing
-- `quality`: force large tier
-
-## Configuration Reference
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `TOGETHER_API_KEY` | `replace_me` | Together API auth key |
-| `TOGETHER_BASE_URL` | `https://api.together.xyz` | Together API base |
-| `ROUTER_MODE` | `heuristic` | Classifier type (`heuristic` or `bert`) |
-| `AB_SPLIT_RATIO` | `0.10` | Variant traffic share |
-| `BUDGET_DEFAULT` | `balanced` | Default budget mode |
-| `CONTEXT_WINDOW_SIZE` | `5` | Recent turns to keep raw |
-| `CONTEXT_MAX_TOKENS` | `4000` | Max context token budget |
-| `SUMMARIZER_MODEL` | `mistralai/Mistral-7B-Instruct-v0.2` | Cheap summarizer model |
-| `SMALL_MODEL` | `mistralai/Mistral-7B-Instruct-v0.2` | Small tier model |
-| `MEDIUM_MODEL` | `meta-llama/Llama-2-13b-chat-hf` | Medium tier model |
-| `LARGE_MODEL` | `meta-llama/Llama-2-70b-chat-hf` | Large tier model |
-| `MEDIUM_THRESHOLD` | `0.35` | Medium routing boundary |
-| `LARGE_THRESHOLD` | `0.70` | Large routing boundary |
-| `SQLITE_PATH` | `./data/router.db` | Telemetry database path |
-
-## Benchmark Suite
-
-Run benchmark with 1000 requests (600 simple, 300 medium, 100 complex):
+Once the server is running, you can test the routing by sending a standard OpenAI-style request:
 
 ```powershell
-python benchmarks/run.py ^
-  --together-api-key YOUR_KEY ^
-  --router-url http://localhost:8000/v1/chat/completions ^
-  --together-url https://api.together.xyz/v1/chat/completions ^
-  --baseline-model meta-llama/Llama-2-70b-chat-hf
+curl -X POST http://localhost:8000/v1/chat/completions ^
+  -H "Content-Type: application/json" ^
+  -d '{
+    "messages": [
+      { "role": "user", "content": "Explain vector databases in simple terms." }
+    ],
+    "budget_hint": "balanced"
+  }'
 ```
-
-Outputs:
-
-- Terminal summary table (cost, avg latency, p95 latency, savings).
-- JSON artifact: `benchmarks/results/benchmark_<timestamp>.json`.
-
-### Benchmark Result Table (Fill After Run)
-
-| Metric | Baseline (Always 70B) | Smart Router |
-| --- | ---: | ---: |
-| Successful requests | _TBD_ | _TBD_ |
-| Failed requests | _TBD_ | _TBD_ |
-| Total cost (USD) | _TBD_ | _TBD_ |
-| Avg latency (ms) | _TBD_ | _TBD_ |
-| P95 latency (ms) | _TBD_ | _TBD_ |
-| Savings (USD) | - | _TBD_ |
-| Savings (%) | - | _TBD_ |
-
-Copy the numbers from the benchmark output artifact into this table.
-
-## Observability
-
-- `/metrics` exposes Prometheus counters/histograms:
-  - `requests_total{tier=...}`
-  - `cost_usd_total{tier=...}`
-  - `latency_ms_histogram{tier=...}`
-- Streamlit dashboard reads SQLite aggregates (cost by tier, p95, A/B comparison, complexity distribution).
-- Grafana dashboard is pre-provisioned from `grafana/dashboards/smart-router.json`.
-
-## Development
-
-Run tests:
-
-```powershell
-python -m pytest -q
-```
-
-Current status:
-
-- Section 1: foundation
-- Section 2: classifier
-- Section 3: context manager
-- Section 4: model router + A/B
-- Section 5: proxy pipeline + Together client
-- Section 6: metrics DB + dashboard
-- Section 7: Docker + Prometheus + Grafana
-- Section 8: benchmark suite + README

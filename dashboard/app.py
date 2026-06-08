@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import sys
 import asyncio
 from pathlib import Path
 from typing import Any
@@ -8,6 +8,9 @@ import altair as alt
 import httpx
 import pandas as pd
 import streamlit as st
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 from core.settings import get_settings
 from db.queries import get_recent_requests, get_stats
