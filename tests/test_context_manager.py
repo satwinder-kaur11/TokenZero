@@ -11,9 +11,8 @@ from core.context_manager import ContextManager
 class FakeSettings:
     context_window_size: int = 3
     context_max_tokens: int = 40
-    summarizer_model: str = "mistralai/Mistral-7B-Instruct-v0.2"
-    together_api_key: str = "test-key"
-    together_base_url: str = "https://api.together.xyz"
+    summarizer_model: str = "llama3.2:1b"
+    ollama_base_url: str = "http://localhost:11434"
 
 
 class FakeEncoder:
@@ -30,7 +29,7 @@ class FakeResponse:
         if self.status_code >= 400:
             raise httpx.HTTPStatusError(
                 "bad status",
-                request=httpx.Request("POST", "https://api.together.xyz/v1/chat/completions"),
+                request=httpx.Request("POST", "http://localhost:11434/v1/chat/completions"),
                 response=httpx.Response(self.status_code),
             )
 
@@ -72,7 +71,7 @@ def test_count_tokens_uses_encoder() -> None:
     assert tokens == 7
 
 
-async def test_summarize_old_calls_together_api() -> None:
+async def test_summarize_old_calls_ollama_api() -> None:
     response = FakeResponse(
         payload={"choices": [{"message": {"content": "Summary output."}}]},
     )
@@ -85,9 +84,9 @@ async def test_summarize_old_calls_together_api() -> None:
     summary = await manager.summarize_old([{"role": "user", "content": "A long conversation"}])
     assert summary == "Summary output."
     assert len(client.calls) == 1
-    assert client.calls[0]["url"] == "https://api.together.xyz/v1/chat/completions"
-    assert client.calls[0]["headers"]["Authorization"] == "Bearer test-key"
-    assert client.calls[0]["json"]["model"] == "mistralai/Mistral-7B-Instruct-v0.2"
+    assert client.calls[0]["url"] == "http://localhost:11434/v1/chat/completions"
+    assert "Authorization" not in client.calls[0]["headers"]
+    assert client.calls[0]["json"]["model"] == "llama3.2:1b"
 
 
 async def test_summarize_old_fallback_on_http_error() -> None:

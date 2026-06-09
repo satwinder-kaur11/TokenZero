@@ -54,6 +54,7 @@ class ContextManager:
         return self.history[-n:]
 
     async def summarize_old(self, messages: list[ChatMessage]) -> str:
+        """Summarize older messages using the local Ollama summarizer model."""
         if not messages:
             return ""
 
@@ -64,17 +65,15 @@ class ContextManager:
             "Return the summary string only."
         )
 
-        payload = {
+        base = self.settings.ollama_base_url.rstrip("/")
+        url = f"{base}/v1/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        payload: dict[str, Any] = {
             "model": self.settings.summarizer_model,
             "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
             "temperature": 0.2,
-            "max_tokens": 220,
         }
-        headers = {
-            "Authorization": f"Bearer {self.settings.together_api_key}",
-            "Content-Type": "application/json",
-        }
-        url = f'{self.settings.together_base_url.rstrip("/")}/v1/chat/completions'
 
         try:
             if self._http_client is not None:
@@ -82,7 +81,7 @@ class ContextManager:
                 response.raise_for_status()
                 data: dict[str, Any] = response.json()
             else:
-                async with httpx.AsyncClient(timeout=20.0) as client:
+                async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.post(url, headers=headers, json=payload)
                     response.raise_for_status()
                     data = response.json()
@@ -93,6 +92,7 @@ class ContextManager:
         except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
             pass
 
+        # Fallback: truncate raw text
         flattened = " ".join(m["content"].strip() for m in messages if m["content"].strip())
         if not flattened:
             return ""

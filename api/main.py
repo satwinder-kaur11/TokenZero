@@ -13,6 +13,7 @@ from core.context_manager import ContextManager
 from core.llm_client import LLMClient
 from core.prometheus_metrics import RouterPrometheusMetrics
 from core.router import ModelRouter
+from api.routes.tools import router as tools_router
 from core.settings import get_settings
 from db.queries import MetricsRecorder
 
@@ -60,8 +61,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # app.include_router(completions_router, prefix="/v1")
+    # app.include_router(metrics_router)
     app.include_router(completions_router, prefix="/v1")
     app.include_router(metrics_router)
+    app.include_router(tools_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

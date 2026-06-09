@@ -13,9 +13,7 @@ class FakeSettings:
     llm_backend: str = "together"
     together_api_key: str = "test-key"
     together_base_url: str = "https://api.together.xyz"
-    gemini_api_key: str = ""
-    gemini_base_url: str = "https://generativelanguage.googleapis.com"
-    gemini_model: str = "gemini-1.5-flash"
+    ollama_base_url: str = "http://localhost:11434"
 
 
 @pytest.mark.asyncio
@@ -70,39 +68,55 @@ async def test_llm_client_raises_on_non_retryable_status() -> None:
 
 
 @pytest.mark.asyncio
-async def test_llm_client_gemini_mode_normalizes_response() -> None:
+async def test_llm_client_ollama_mode_normalizes_response() -> None:
+    """Ollama /v1/chat/completions already returns OpenAI-compatible JSON."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         _ = request
         return httpx.Response(
             200,
             json={
-                "candidates": [
+                "id": "ollama-abc",
+                "object": "chat.completion",
+                "created": 1234567890,
+                "model": "llama3.2:1b",
+                "choices": [
                     {
-                        "content": {
-                            "parts": [{"text": "hello from gemini"}],
-                        }
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "hello from ollama"},
+                        "finish_reason": "stop",
                     }
                 ],
-                "usageMetadata": {
-                    "promptTokenCount": 10,
-                    "candidatesTokenCount": 6,
-                    "totalTokenCount": 16,
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 4,
+                    "total_tokens": 14,
                 },
             },
         )
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as http_client:
-        settings = FakeSettings(
-            llm_backend="gemini",
-            gemini_api_key="abc123",
-        )
+        settings = FakeSettings(llm_backend="ollama")
         client = LLMClient(settings=settings, http_client=http_client)  # type: ignore[arg-type]
         result = await client.call(
-            model="gemini-1.5-flash",
+            model="llama3.2:1b",
             messages=[{"role": "user", "content": "hi"}],
         )
 
-    assert result["choices"][0]["message"]["content"] == "hello from gemini"
+    assert result["choices"][0]["message"]["content"] == "hello from ollama"
     assert result["usage"]["prompt_tokens"] == 10
-    assert result["usage"]["completion_tokens"] == 6
+    assert result["usage"]["completion_tokens"] == 4
+
+
+def test_llm_client_mock_backend() -> None:
+    """Mock backend returns a deterministic response without any HTTP calls."""
+    import asyncio
+
+    settings = FakeSettings(llm_backend="mock")
+    client = LLMClient(settings=settings)  # type: ignore[arg-type]
+    result = asyncio.get_event_loop().run_until_complete(
+        client.call(model="mock-model", messages=[{"role": "user", "content": "ping"}])
+    )
+    assert "Mock response" in result["choices"][0]["message"]["content"]
+    assert result["model"] == "mock-model"

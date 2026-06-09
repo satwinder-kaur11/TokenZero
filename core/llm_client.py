@@ -19,7 +19,7 @@ class LLMClient:
         settings: Settings | None = None,
         http_client: httpx.AsyncClient | None = None,
         max_retries: int = 3,
-        timeout: float = 60.0,
+        timeout: float = 120.0,
         backoff_base_seconds: float = 0.5,
         sleep_func: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
@@ -34,12 +34,60 @@ class LLMClient:
         backend = self.settings.llm_backend
         if backend == "mock":
             return self._call_mock(model=model, messages=messages)
-        if backend == "gemini":
-            return await self._call_gemini(model=model, messages=messages, **kwargs)
         if backend == "ollama":
             return await self._call_ollama(model=model, messages=messages, **kwargs)
+        # Default: together
         return await self._call_together(model=model, messages=messages, **kwargs)
 
+    # ------------------------------------------------------------------
+    # Ollama  (local, OpenAI-compatible /v1/chat/completions endpoint)
+    # ------------------------------------------------------------------
+    async def _call_ollama(self, model: str, messages: list[dict], **kwargs: object) -> dict[str, Any]:
+        base = self.settings.ollama_base_url.rstrip("/")
+        url = f"{base}/v1/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+        }
+        # Forward safe optional kwargs (temperature, max_tokens)
+        for key in ("temperature", "max_tokens"):
+            if key in kwargs:
+                payload[key] = kwargs[key]
+
+        response = await self._request_with_retries(url=url, headers=headers, payload=payload)
+        data = response.json()
+        return self._normalize_ollama_response(data=data, model=model)
+
+    @staticmethod
+    def _normalize_ollama_response(data: dict[str, Any], model: str) -> dict[str, Any]:
+        """Ensure the response always has the standard OpenAI-like shape."""
+        # Ollama's /v1 endpoint already returns OpenAI-compatible JSON,
+        # but we guard against unexpected shapes just in case.
+        choices = data.get("choices", [])
+        usage = data.get("usage", {})
+        prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+        completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+        total_tokens = int(
+            usage.get("total_tokens", prompt_tokens + completion_tokens) or 0
+        )
+        return {
+            "id": data.get("id", f"ollama-{int(time.time() * 1000)}"),
+            "object": data.get("object", "chat.completion"),
+            "created": data.get("created", int(time.time())),
+            "model": data.get("model", model),
+            "choices": choices,
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Together AI  (cloud fallback)
+    # ------------------------------------------------------------------
     async def _call_together(self, model: str, messages: list[dict], **kwargs: object) -> dict[str, Any]:
         url = f'{self.settings.together_base_url.rstrip("/")}/v1/chat/completions'
         headers = {
@@ -52,42 +100,9 @@ class LLMClient:
         response = await self._request_with_retries(url=url, headers=headers, payload=payload)
         return response.json()
 
-    async def _call_ollama(self, model: str, messages: list[dict], **kwargs: object) -> dict[str, Any]:
-        url = "http://localhost:11434/v1/chat/completions"
-        headers = {"Content-Type": "application/json"}
-        payload: dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "stream": False,
-        }
-        # Ollama doesn't support extra kwargs like temperature via **kwargs cleanly, skip them
-        response = await self._request_with_retries(url=url, headers=headers, payload=payload)
-        return response.json()
-
-    async def _call_gemini(self, model: str, messages: list[dict], **kwargs: object) -> dict[str, Any]:
-        if not self.settings.gemini_api_key.strip():
-            raise LLMClientError(
-                "GEMINI_API_KEY is missing. Set GEMINI_API_KEY in your environment."
-            )
-
-        target_model = model or self.settings.gemini_model
-        url = (
-            f'{self.settings.gemini_base_url.rstrip("/")}/v1beta/models/'
-            f"{target_model}:generateContent?key={self.settings.gemini_api_key}"
-        )
-        headers = {"Content-Type": "application/json"}
-        contents = self._to_gemini_contents(messages)
-        payload: dict[str, Any] = {
-            "contents": contents,
-            "generationConfig": {
-                "temperature": float(kwargs.get("temperature", 0.2)),
-            },
-        }
-
-        response = await self._request_with_retries(url=url, headers=headers, payload=payload)
-        data = response.json()
-        return self._normalize_gemini_response(data=data, model=target_model)
-
+    # ------------------------------------------------------------------
+    # HTTP retry logic
+    # ------------------------------------------------------------------
     async def _request_with_retries(
         self,
         *,
@@ -116,61 +131,9 @@ class LLMClient:
 
         raise LLMClientError("LLM provider request failed after all retry attempts.")
 
-    @staticmethod
-    def _to_gemini_contents(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        contents: list[dict[str, Any]] = []
-        for item in messages:
-            role = str(item.get("role", "user"))
-            text = str(item.get("content", ""))
-            if not text.strip():
-                continue
-            if role == "assistant":
-                gemini_role = "model"
-            elif role in {"system", "developer"}:
-                gemini_role = "user"
-                text = f"[{role}] {text}"
-            else:
-                gemini_role = "user"
-            contents.append({"role": gemini_role, "parts": [{"text": text}]})
-
-        if not contents:
-            contents.append({"role": "user", "parts": [{"text": "Hello"}]})
-        return contents
-
-    @staticmethod
-    def _normalize_gemini_response(data: dict[str, Any], model: str) -> dict[str, Any]:
-        candidates = data.get("candidates", []) or []
-        first = candidates[0] if candidates else {}
-        content = first.get("content", {}) if isinstance(first, dict) else {}
-        parts = content.get("parts", []) if isinstance(content, dict) else []
-        text = ""
-        if parts and isinstance(parts[0], dict):
-            text = str(parts[0].get("text", ""))
-
-        usage = data.get("usageMetadata", {}) if isinstance(data, dict) else {}
-        prompt_tokens = int(usage.get("promptTokenCount", 0) or 0)
-        completion_tokens = int(usage.get("candidatesTokenCount", 0) or 0)
-        total_tokens = int(usage.get("totalTokenCount", prompt_tokens + completion_tokens) or 0)
-
-        return {
-            "id": f"gemini-{int(time.time() * 1000)}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": model,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": text},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": total_tokens,
-            },
-        }
-
+    # ------------------------------------------------------------------
+    # Mock backend  (for unit tests)
+    # ------------------------------------------------------------------
     @staticmethod
     def _call_mock(model: str, messages: list[dict[str, Any]]) -> dict[str, Any]:
         latest_user = ""
