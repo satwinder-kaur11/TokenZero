@@ -90,8 +90,8 @@ Open another terminal session and run the Streamlit dashboard:
 
 ```powershell
 # Windows
-
-streamlit run dashboard/app.py
+poetry run streamlit run dashboard/app.py --server.port 8501
+# streamlit run dashboard/app.py
 ```
 This will open the dashboard UI at `http://localhost:8501`.
 
